@@ -1,0 +1,24 @@
+[package]
+name = "nexa-license"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Nexa family license library — key=value license/lease format, canonical signing bytes, Crockford base32, product descriptor (chain verification · machine ID · lease protocol follow)"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# 서명 검증 어댑터 · 기기 ID · 파일 관리 · 리스 프로토콜 — nexa-sql docs/25 §10-3 계층.
+# 지금은 이름만 예약(구현은 D-40 확정 뒤). 켜도 비어 있다.
+# ★ 발급(서명 · 키 생성)은 이 공개 라이브러리에 없다 — 비공개 nexa-license-server(nexa-license-tool)에만(docs/25 §11-1).
+ed25519 = []
+machine-id = []
+fs = []
+protocol = []
+
+[dependencies]

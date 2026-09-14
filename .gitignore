@@ -1,0 +1,18 @@
+# 빌드 산출물 (Rust) — 라이브러리 워크스페이스라 Cargo.lock은 커밋하지 않는다.
+/target/
+Cargo.lock
+**/*.rs.bk
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 에디터
+.vscode/
+.idea/
+*.swp
+
+# 키 잔재 (배포·커밋 금지 — 공개키 상수만 코드에)
+*.key
+*.secret
