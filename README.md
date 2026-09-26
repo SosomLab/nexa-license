@@ -28,10 +28,10 @@ Nexa 계열(nexa-sql · nexa-clip · nexa-beep · nexa-dir)과 비공개 인증 
 | `machine` 3-OS 기기 ID(SHA-256[..20] · 도메인 태그) | `machine-id` | ✅ 09-27 |
 | `request` 요청 코드 `NEXAREQ1` encode/decode | 항상 | ✅ 09-27 |
 | `keys` SosomLab 루트 공개키(`ROOT_KEYS`) | 항상 | 🚧 빈 목록 — 발급 PC keygen 뒤 채움(nexa-sql docs/91) |
-| `fs` 폴더를 받아 라이선스·리스 파일 관리(원자적 쓰기) | `fs` | ☐ |
+| `fs` 폴더를 받아 라이선스 파일 관리(`Store` · 폴더 순서 · 원자적 쓰기 · 변경 서명) | `fs` | ✅ 09-27 |
 | `protocol` 리스 메시지 + 최소 HTTP 프레이밍 | `protocol` | ☐ |
 
-시험 19개(`cargo test --workspace --all-features`) · 3-OS CI. 툴체인은 `rust-toolchain.toml`(stable · rustfmt/clippy)로 고정.
+시험 23개(`cargo test --workspace --all-features`) · 3-OS CI. 툴체인은 `rust-toolchain.toml`(stable · rustfmt/clippy)로 고정.
 
 ## 소비자
 

@@ -17,6 +17,7 @@ default = []
 ed25519 = ["dep:ed25519-dalek"]
 # 3-OS 기기 ID(Windows MachineGuid · macOS IOPlatformUUID · Linux machine-id) → SHA-256(도메인 ‖ 원문)[..20].
 machine-id = ["dep:sha2"]
+# 라이선스 파일 자리(폴더는 호출측 주입) · 원자적 설치·삭제 · 변경 서명(docs/23 §5 동시 설치).
 fs = []
 protocol = []
 
