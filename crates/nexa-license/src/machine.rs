@@ -46,6 +46,9 @@ fn raw_identifier() -> Option<String> {
 
 #[cfg(target_os = "windows")]
 fn raw_identifier() -> Option<String> {
+    // GUI 앱(windows subsystem)에서 콘솔 프로그램을 띄우면 창이 잠깐 뜬다 → CREATE_NO_WINDOW(nexa-sql 102차 win 09-27 지적).
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let out = std::process::Command::new("reg")
         .args([
             "query",
@@ -53,6 +56,7 @@ fn raw_identifier() -> Option<String> {
             "/v",
             "MachineGuid",
         ])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
