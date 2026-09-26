@@ -22,13 +22,16 @@ Nexa 계열(nexa-sql · nexa-clip · nexa-beep · nexa-dir)과 비공개 인증 
 | `format` key=value 파싱·직렬화·정규화 서명 대상 | 항상 | ✅ |
 | `base32` Crockford(요청 코드·기기 코드·서명) | 항상 | ✅ |
 | `types` `Product` · `Kind` · `SeatMode` · `Alg` | 항상 | ✅ |
-| `verify` 체인 검증(`SigVerifier` 포트 · 기기 일치 · 시각) | 항상 | ☐ D-40 뒤 |
-| `ed25519` dalek 2.x 어댑터 | `ed25519` | ☐ |
-| `machine` 3-OS 기기 ID | `machine-id` | ☐ |
-| `request` 요청 코드 `NEXAREQ1` / `NEXASRV1` | 항상 | ☐ |
+| `date` `YYYY-MM-DD` ↔ 일 수(외부 crate 0) | 항상 | ✅ 09-27 |
+| `verify` 체인 검증(`SigVerifier` 포트 · 기기 일치 · 시각 · `Verdict`) | 항상 | ✅ 09-27 |
+| `ed25519` dalek 2.x 검증 어댑터 | `ed25519` | ✅ 09-27 |
+| `machine` 3-OS 기기 ID(SHA-256[..20] · 도메인 태그) | `machine-id` | ✅ 09-27 |
+| `request` 요청 코드 `NEXAREQ1` encode/decode | 항상 | ✅ 09-27 |
+| `keys` SosomLab 루트 공개키(`ROOT_KEYS`) | 항상 | 🚧 빈 목록 — 발급 PC keygen 뒤 채움(nexa-sql docs/91) |
 | `fs` 폴더를 받아 라이선스·리스 파일 관리(원자적 쓰기) | `fs` | ☐ |
 | `protocol` 리스 메시지 + 최소 HTTP 프레이밍 | `protocol` | ☐ |
-| `keys` SosomLab 루트 공개키(ed25519 · p256) + 테스트 픽스처 | 항상 | ☐ |
+
+시험 19개(`cargo test --workspace --all-features`) · 3-OS CI. 툴체인은 `rust-toolchain.toml`(stable · rustfmt/clippy)로 고정.
 
 ## 소비자
 
@@ -44,7 +47,7 @@ nexa-license = { path = "../nexa-license/crates/nexa-license", features = ["ed25
 ## 개발
 
 ```
-cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
+cargo fmt --all --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace --all-features
 ```
 
 CI는 Windows · macOS · Linux 3-OS. 문서·커밋 규약은 nexa-sql `docs/16`을 따릅니다.

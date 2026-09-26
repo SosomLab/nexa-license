@@ -1,0 +1,5 @@
+# nexa-sql과 같은 stable 고정(형제 저장소 · 09-27 Linux 101차 — "no default toolchain" 회피).
+# 라이브러리라 교차 타깃은 두지 않는다(3-OS 검사는 CI 몫).
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]

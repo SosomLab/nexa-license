@@ -13,11 +13,20 @@
 //! - **검증 전용.** 서명 생성·키 생성(발급)은 여기 없다 — 비공개 `nexa-license-server`의 `nexa-license-tool`만 가진다.
 //!   (정책의 안전은 코드 비밀이 아니라 **루트 비밀키 보관**에 있다 — 공개키만 내장된 앱은 다른 키로 서명한 파일을 거부한다.)
 //!
-//! 현재 층: [`format`] · [`base32`] · [`types`]. 다음(D-40 뒤): `verify`(SigVerifier 포트) · `machine` · `fs` · `protocol` · `keys`.
+//! 층(09-27 초기 버전): [`format`] · [`base32`] · [`types`] · [`date`] · [`request`] · [`verify`](SigVerifier 포트 · D-40) · [`keys`](루트 공개키) ·
+//! `ed25519`(feature) · `machine`(feature). 다음: `fs` · `protocol`(리스).
 
 pub mod base32;
+pub mod date;
+#[cfg(feature = "ed25519")]
+pub mod ed25519;
 pub mod format;
+pub mod keys;
+#[cfg(feature = "machine-id")]
+pub mod machine;
+pub mod request;
 pub mod types;
+pub mod verify;
 
 /// 라이선스·리스 파일 `format=` 값. 바뀌면 `nxl2`로 올리고 두 판을 동시에 검증한다.
 pub const FORMAT: &str = "nxl1";
