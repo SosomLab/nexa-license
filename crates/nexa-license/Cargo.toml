@@ -21,9 +21,14 @@ machine-id = ["dep:sha2"]
 fs = []
 protocol = []
 
+# ★ 발급(키 생성 · 서명 · 비밀키 봉투) — 발급기 `nexa-license-tool`·서버만 켠다. 앱은 절대 켜지 않는다(검증 전용 · docs/25 §12-1).
+#   안전의 근거는 코드가 아니라 루트 비밀키 보관(docs/91 §0) — 이 코드가 공개돼도 다른 키로 서명한 파일은 앱이 거부한다.
+issuer = ["dep:ed25519-dalek", "dep:sha2", "dep:rand_core", "ed25519-dalek/rand_core"]
+
 [dependencies]
 ed25519-dalek = { version = "2", optional = true, default-features = false, features = ["std"] }
 sha2 = { version = "0.10", optional = true, default-features = false }
+rand_core = { version = "0.6", optional = true, features = ["getrandom"] }
 
 [dev-dependencies]
 # 시험은 서명된 문서가 있어야 한다 — 시험 전용 키쌍 생성·서명(발급 코드가 아니다 · #[cfg(test)]).

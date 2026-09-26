@@ -4,7 +4,7 @@
 # 원칙: 라이브러리는 앱을 모른다 — Feature 열거형·UI 문자열·저장 폴더 정책은 호출측이 주입. 기본 의존 0.
 [workspace]
 resolver = "2"
-members = ["crates/nexa-license"]
+members = ["crates/nexa-license", "crates/nexa-license-tool"]
 
 [workspace.package]
 version = "0.0.1"

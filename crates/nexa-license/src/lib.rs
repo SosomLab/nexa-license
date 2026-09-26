@@ -10,8 +10,9 @@
 //! - **한 형식.** 라이선스 · 리스 · 요청 코드 메타 · 서버 메시지가 전부 같은 key=value 문서([`format`])와 같은 정규화 규칙을 쓴다.
 //! - 제품 구분은 서명 본문의 `product=`가 한다 — 서명 도메인·기기 ID 도메인은 계열 공통(한 루트 키 · 한 PC = 한 기기 코드).
 //!
-//! - **검증 전용.** 서명 생성·키 생성(발급)은 여기 없다 — 비공개 `nexa-license-server`의 `nexa-license-tool`만 가진다.
-//!   (정책의 안전은 코드 비밀이 아니라 **루트 비밀키 보관**에 있다 — 공개키만 내장된 앱은 다른 키로 서명한 파일을 거부한다.)
+//! - **앱은 검증 전용.** 서명 생성·키 생성·봉투(발급)는 feature `issuer` 뒤에만 있고(`sign` · `envelope`) 발급기 `nexa-license-tool`만 켠다
+//!   (09-27 · 서버 보류로 비공개 저장소 대신 이 워크스페이스 `crates/nexa-license-tool`). 정책의 안전은 코드 비밀이 아니라
+//!   **루트 비밀키 보관**에 있다 — 공개키만 내장된 앱은 다른 키로 서명한 파일을 거부한다(docs/91 §0).
 //!
 //! 층(09-27 초기 버전): [`format`] · [`base32`] · [`types`] · [`date`] · [`request`] · [`verify`](SigVerifier 포트 · D-40) · [`keys`](루트 공개키) ·
 //! `ed25519`(feature) · `machine`(feature) · [`fs`](feature · 폴더 주입 · 원자적 설치). 다음: `protocol`(리스).
@@ -20,6 +21,8 @@ pub mod base32;
 pub mod date;
 #[cfg(feature = "ed25519")]
 pub mod ed25519;
+#[cfg(feature = "issuer")]
+pub mod envelope;
 pub mod format;
 #[cfg(feature = "fs")]
 pub mod fs;
@@ -27,6 +30,8 @@ pub mod keys;
 #[cfg(feature = "machine-id")]
 pub mod machine;
 pub mod request;
+#[cfg(feature = "issuer")]
+pub mod sign;
 pub mod types;
 pub mod verify;
 

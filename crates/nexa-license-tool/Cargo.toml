@@ -1,0 +1,20 @@
+[package]
+name = "nexa-license-tool"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "SosomLab 오프라인 라이선스 발급기 — keygen(봉투) · issue/reissue · verify · decode-request · ledger · keys-rs (nexa-sql docs/25 §12 · T-241)"
+
+[[bin]]
+name = "nexa-license-tool"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+nexa-license = { path = "../nexa-license", features = ["issuer", "ed25519"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
