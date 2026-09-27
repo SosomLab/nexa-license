@@ -40,6 +40,7 @@ Nexa 계열(nexa-sql · nexa-clip · nexa-beep · nexa-dir)과 비공개 인증 
 ```
 nexa-license-tool keygen --out root.key --id root-v1            # 봉투(nxk1 · 0600) + root.key.pub · 암호 = 프롬프트 | --pass-env | --pass-stdin
 nexa-license-tool keys-rs root.key.pub --out <앱>/crates/nexa-license/src/keys.rs   # 앱에 공개키 내장(회전 = .pub 둘 이상)
+nexa-license-tool rekey --key root.key --out root-v1b.key                        # 봉투 암호 변경(같은 키 · 옛 봉투는 백업 뒤 삭제)
 nexa-license-tool decode-request NEXAREQ1....                    # 고객 요청 코드 보기
 nexa-license-tool issue --key root.key --request NEXAREQ1.... --kind user --licensee "ACME" --tier pro   # ./issued/<id>/nexa-sql.license + mail.txt + ledger.tsv
 nexa-license-tool reissue --key root.key --id NSL-2026-000001 --add-request NEXAREQ1....                   # 기기 추가(5대) · v2 · 옛 판 보존
