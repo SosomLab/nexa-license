@@ -159,6 +159,7 @@ mod tests {
         let p = Product {
             id: "nexa-sql",
             build_date: "2026-09-27",
+            version: "0.0.1",
         };
         let v = verify_license(
             &p,

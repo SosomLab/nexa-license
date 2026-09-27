@@ -37,6 +37,10 @@ pub struct License {
     pub seat_mode: Option<SeatMode>,
     /// 서명한 루트 키 id(`key=` · 없으면 빈 문자열).
     pub key_id: String,
+    /// `max_major=`(없으면 제한 없음) — 앱 Major가 이보다 크면 Outdated(Major 바뀌면 무효 · 기본 발급값 = 요청 앱의 Major).
+    pub max_major: Option<u64>,
+    /// `max_version=`(없으면 제한 없음) — 앱 버전이 이 값 **이상**이면 Outdated(Major 무관 · 특정 버전 이후 무효 조항).
+    pub max_version: String,
 }
 
 impl License {
@@ -150,6 +154,8 @@ pub fn verify_license(
         seats: doc.get("seats").and_then(|s| s.parse().ok()).unwrap_or(0),
         seat_mode: doc.get("seat_mode").and_then(SeatMode::parse),
         key_id: key_id.to_string(),
+        max_major: doc.get("max_major").and_then(|s| s.trim().parse().ok()),
+        max_version: doc.get("max_version").unwrap_or("").trim().to_string(),
     };
     if let (Some(until), Some(build)) = (
         date::parse_days(&lic.updates_until),
@@ -158,6 +164,16 @@ pub fn verify_license(
         if build > until {
             return Verdict::Outdated(lic);
         }
+    }
+    // 버전 조항(09-27): Major 초과 · 특정 버전 이후 = 이 판을 덮지 않는 라이선스(Outdated · 이전 판은 그대로 정식).
+    if let (Some(mm), Some(app)) = (lic.max_major, crate::version::major(product.version)) {
+        if app > mm {
+            return Verdict::Outdated(lic);
+        }
+    }
+    if !lic.max_version.is_empty() && crate::version::at_or_after(product.version, &lic.max_version)
+    {
+        return Verdict::Outdated(lic);
     }
     if let Some(exp) = date::parse_days(&lic.expires) {
         if today > exp {
@@ -189,6 +205,7 @@ mod tests {
     const P: Product = Product {
         id: "nexa-sql",
         build_date: "2026-09-27",
+        version: "1.2.3",
     };
     fn keypair() -> (SigningKey, Vec<u8>) {
         let sk = SigningKey::generate(&mut rand_core::OsRng);
@@ -289,6 +306,7 @@ mod tests {
         let clip = Product {
             id: "nexa-clip",
             build_date: "2026-09-27",
+            version: "1.2.3",
         };
         assert_eq!(
             verify_license(&clip, &r, &DalekV, &text, Some(&[9u8; 20]), TODAY),
@@ -376,5 +394,52 @@ mod tests {
             (l.kind, l.seats, l.seat_mode),
             (Kind::Org, 10, Some(SeatMode::Named))
         );
+    }
+
+    /// 버전 조항(09-27): `max_major` 초과 · `max_version` 이상 = Outdated · 경계는 관대(같은 Major · 그 버전 미만 = 정식).
+    #[test]
+    fn version_clauses_major_and_cutoff() {
+        let (sk, pk) = keypair();
+        let r = roots(leak(pk));
+        let ok = |extra: &[(&str, &str)]| {
+            verify_license(
+                &P,
+                &r,
+                &DalekV,
+                &signed(&sk, extra),
+                Some(&[9u8; 20]),
+                TODAY,
+            )
+        };
+        assert!(
+            matches!(ok(&[("max_major", "1")]), Verdict::Licensed(_)),
+            "같은 Major"
+        );
+        assert!(
+            matches!(ok(&[("max_major", "0")]), Verdict::Outdated(_)),
+            "Major 초과"
+        );
+        assert!(
+            matches!(ok(&[("max_version", "1.3.0")]), Verdict::Licensed(_)),
+            "1.2.3 < 1.3.0"
+        );
+        assert!(
+            matches!(ok(&[("max_version", "1.2.3")]), Verdict::Outdated(_)),
+            "그 버전부터 무효"
+        );
+        assert!(matches!(
+            ok(&[("max_version", "1.2.0")]),
+            Verdict::Outdated(_)
+        ));
+        assert!(
+            matches!(ok(&[("max_version", "junk")]), Verdict::Licensed(_)),
+            "못 읽으면 관대"
+        );
+        if let Verdict::Licensed(l) = ok(&[("max_major", "1"), ("max_version", "2.0.0")]) {
+            assert_eq!(l.max_major, Some(1));
+            assert_eq!(l.max_version, "2.0.0");
+        } else {
+            panic!();
+        }
     }
 }

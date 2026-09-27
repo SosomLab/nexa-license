@@ -34,6 +34,7 @@ pub mod request;
 pub mod sign;
 pub mod types;
 pub mod verify;
+pub mod version;
 
 /// 라이선스·리스 파일 `format=` 값. 바뀌면 `nxl2`로 올리고 두 판을 동시에 검증한다.
 pub const FORMAT: &str = "nxl1";

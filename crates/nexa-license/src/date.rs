@@ -21,6 +21,16 @@ pub fn format_days(days: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// `days`에 `years`년을 더한다(같은 월·일 · 2월 29일은 28일로). 유효기간 기본 = 발급일 + 3년(nexa-sql 09-27).
+#[must_use]
+pub fn add_years(days: i64, years: i64) -> i64 {
+    let (y, m, d) = civil_from_days(days);
+    let y2 = y + years;
+    let leap = (y2 % 4 == 0 && y2 % 100 != 0) || y2 % 400 == 0;
+    let d2 = if m == 2 && d == 29 && !leap { 28 } else { d };
+    days_from_civil(y2, m, d2)
+}
+
 /// 오늘(UTC 기준 날짜 · 시스템 시계) — 만료형 판정에만 쓴다(영구 모델은 빌드일이 기준 · docs/23 §1-4).
 #[must_use]
 pub fn today_days() -> i64 {
@@ -92,6 +102,13 @@ mod tests {
         assert!(parse_days("2026-02-30").is_none());
         assert!(parse_days("2026-13-01").is_none());
         assert!(parse_days("abc").is_none());
+        let d = parse_days("2024-02-29").expect("leap");
+        assert_eq!(format_days(add_years(d, 1)), "2025-02-28");
+        assert_eq!(format_days(add_years(d, 4)), "2028-02-29");
+        assert_eq!(
+            format_days(add_years(parse_days("2026-09-27").expect("d"), 3)),
+            "2029-09-27"
+        );
         assert!(today_days() > parse_days("2026-01-01").expect("2026"));
     }
 }

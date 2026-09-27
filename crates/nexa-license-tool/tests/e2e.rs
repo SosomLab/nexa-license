@@ -136,7 +136,12 @@ fn keygen_issue_verify_reissue_ledger() {
     assert_eq!(d.get("features"), Some("*"));
     assert_eq!(d.get("key"), Some("root-t1"));
     assert!(d.get("sig").is_some());
-    assert!(d.get("expires").is_none(), "pro = 영구");
+    // 유효기간 기본 3년 · Major 조항 = 요청 앱(nexa-sql/0.0.1)의 Major 0 · updates_until = expires.
+    let exp = d.get("expires").expect("expires = 기본 3년");
+    assert!(exp > "2028", "{exp}");
+    assert_eq!(d.get("updates_until"), Some(exp));
+    assert_eq!(d.get("max_major"), Some("0"));
+    assert!(d.get("max_version").is_none());
     // 잘못된 암호 = 4 · 아무것도 안 씀
     let (rc, _, _) = run(tool()
         .args(["issue", "--key"])
@@ -166,6 +171,77 @@ fn keygen_issue_verify_reissue_ledger() {
         .args(["--machine", &base32::encode(&m1)]));
     assert_eq!(rc, 0, "{out}");
     assert!(out.contains("verdict        licensed"));
+    // Major가 바뀐 앱(1.0.0)에서는 outdated · 같은 Major(0.9.9)는 정식.
+    let (rc, out, _) = run(tool()
+        .arg("verify")
+        .arg(&file)
+        .arg("--pub")
+        .arg(&pub_path)
+        .args(["--machine", &base32::encode(&m1), "--app-version", "1.0.0"]));
+    assert_eq!(rc, 1);
+    assert!(out.contains("outdated"), "{out}");
+    let (rc, _, _) = run(tool()
+        .arg("verify")
+        .arg(&file)
+        .arg("--pub")
+        .arg(&pub_path)
+        .args(["--machine", &base32::encode(&m1), "--app-version", "0.9.9"]));
+    assert_eq!(rc, 0);
+    // 특정 버전 이후 무효(--max-version) · 영구(--expires none) · Major 제한 없음(none).
+    let (rc, out, err) = run(tool()
+        .args(["issue", "--key"])
+        .arg(&env_path)
+        .args([
+            "--pass-env",
+            "NLT_PASS",
+            "--request",
+            &r1,
+            "--kind",
+            "user",
+            "--licensee",
+            "Cut",
+            "--tier",
+            "pro",
+            "--max-version",
+            "0.5.0",
+            "--expires",
+            "none",
+            "--max-major",
+            "none",
+            "--no-mail",
+            "--out",
+        ])
+        .arg(&issued)
+        .env("NLT_PASS", "s3cret"));
+    assert_eq!(rc, 0, "{err}");
+    assert!(
+        out.contains("expires        -")
+            && out.contains("max_version    0.5.0")
+            && out.contains("max_major      -"),
+        "{out}"
+    );
+    let id_cut = out
+        .lines()
+        .find_map(|l| l.strip_prefix("id             "))
+        .expect("id")
+        .trim()
+        .to_string();
+    let f_cut = issued.join(&id_cut).join("nexa-sql.license");
+    let (rc, _, _) = run(tool()
+        .arg("verify")
+        .arg(&f_cut)
+        .arg("--pub")
+        .arg(&pub_path)
+        .args(["--machine", &base32::encode(&m1), "--app-version", "0.4.9"]));
+    assert_eq!(rc, 0, "0.4.9 < 0.5.0 = 정식");
+    let (rc, out, _) = run(tool()
+        .arg("verify")
+        .arg(&f_cut)
+        .arg("--pub")
+        .arg(&pub_path)
+        .args(["--machine", &base32::encode(&m1), "--app-version", "0.5.0"]));
+    assert_eq!(rc, 1);
+    assert!(out.contains("outdated"), "{out}");
     let (rc, out, _) = run(tool()
         .arg("verify")
         .arg(&file)
@@ -214,7 +290,11 @@ fn keygen_issue_verify_reissue_ledger() {
     }
     // ledger: 두 행 · 기기 접두만 · find
     let ledger = std::fs::read_to_string(issued.join("ledger.tsv")).expect("ledger");
-    assert_eq!(ledger.lines().count(), 3, "헤더 + 2행:\n{ledger}");
+    assert_eq!(
+        ledger.lines().count(),
+        4,
+        "헤더 + 3행(발급 · Cut 발급 · 재발급):\n{ledger}"
+    );
     assert!(
         !ledger.contains(&base32::encode(&m1)),
         "기기 ID 전체가 대장에 없다"
@@ -244,6 +324,8 @@ fn keygen_issue_verify_reissue_ledger() {
             "Org",
             "--tier",
             "org",
+            "--max-major",
+            "none",
             "--no-mail",
             "--out",
         ])
@@ -257,7 +339,7 @@ fn keygen_issue_verify_reissue_ledger() {
         .trim()
         .to_string();
     assert_ne!(id, id2);
-    assert!(id2.ends_with("000002"), "{id2}");
+    assert!(id2.ends_with("000003"), "{id2}");
     // 인자 오류 = 2 · 체험 = expires 자동
     let (rc, _, _) = run(tool().args(["issue", "--kind", "user"]));
     assert_eq!(rc, 2);

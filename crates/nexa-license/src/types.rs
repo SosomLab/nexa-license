@@ -9,6 +9,8 @@ pub struct Product {
     pub id: &'static str,
     /// 빌드 날짜 `YYYY-MM-DD`(각 앱 `build.rs`가 박는다) — 영구 라이선스의 `updates_until` 판정 기준.
     pub build_date: &'static str,
+    /// 앱 버전 `MAJOR.MINOR.PATCH`(`CARGO_PKG_VERSION`) — `max_major`(Major 바뀌면 무효) · `max_version`(그 버전부터 무효) 판정 기준(09-27).
+    pub version: &'static str,
 }
 
 impl Product {
@@ -157,6 +159,7 @@ mod tests {
     const SQL: Product = Product {
         id: "nexa-sql",
         build_date: "2026-09-14",
+        version: "0.0.1",
     };
 
     #[test]

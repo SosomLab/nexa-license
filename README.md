@@ -22,8 +22,9 @@ Nexa 계열(nexa-sql · nexa-clip · nexa-beep · nexa-dir)과 비공개 인증 
 | `format` key=value 파싱·직렬화·정규화 서명 대상 | 항상 | ✅ |
 | `base32` Crockford(요청 코드·기기 코드·서명) | 항상 | ✅ |
 | `types` `Product` · `Kind` · `SeatMode` · `Alg` | 항상 | ✅ |
-| `date` `YYYY-MM-DD` ↔ 일 수(외부 crate 0) | 항상 | ✅ 09-27 |
-| `verify` 체인 검증(`SigVerifier` 포트 · 기기 일치 · 시각 · `Verdict`) | 항상 | ✅ 09-27 |
+| `date` `YYYY-MM-DD` ↔ 일 수 · `add_years`(외부 crate 0) | 항상 | ✅ 09-27 |
+| `version` `MAJOR.MINOR.PATCH` 비교(`max_major`·`max_version` 조항) | 항상 | ✅ 09-27 |
+| `verify` 체인 검증(`SigVerifier` 포트 · 기기 일치 · 시각 · **버전 조항 `max_major`/`max_version`** · `Verdict`) | 항상 | ✅ 09-27 |
 | `ed25519` dalek 2.x 검증 어댑터 | `ed25519` | ✅ 09-27 |
 | `machine` 3-OS 기기 ID(SHA-256[..20] · 도메인 태그) | `machine-id` | ✅ 09-27 |
 | `request` 요청 코드 `NEXAREQ1` encode/decode | 항상 | ✅ 09-27 |
@@ -43,6 +44,7 @@ nexa-license-tool keys-rs root.key.pub --out <앱>/crates/nexa-license/src/keys.
 nexa-license-tool rekey --key root.key --out root-v1b.key                        # 봉투 암호 변경(같은 키 · 옛 봉투는 백업 뒤 삭제)
 nexa-license-tool decode-request NEXAREQ1....                    # 고객 요청 코드 보기
 nexa-license-tool issue --key root.key --request NEXAREQ1.... --kind user --licensee "ACME" --tier pro   # ./issued/<id>/nexa-sql.license + mail.txt + ledger.tsv
+#   기본(09-27): 유효기간 expires = 발급일 + 3년 · updates_until = expires · max_major = 요청 앱의 Major(Major 바뀌면 무효) · --max-version X.Y.Z = 그 버전부터 무효(Major 무관) · --expires none = 영구
 nexa-license-tool reissue --key root.key --id NSL-2026-000001 --add-request NEXAREQ1....                   # 기기 추가(5대) · v2 · 옛 판 보존
 nexa-license-tool verify ./issued/NSL-2026-000001/nexa-sql.license --pub root.key.pub --machine <base32>   # 앱과 같은 검증 코드
 nexa-license-tool ledger list | find acme

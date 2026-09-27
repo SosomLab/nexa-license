@@ -7,7 +7,8 @@
 //! nexa-license-tool decode-request <NEXAREQ1.…>                          # 기기 코드 · 메타 보기
 //! nexa-license-tool issue   --key <봉투> [--pass-env NAME|--pass-stdin] --request <코드> [--request …] --kind device|user|team-seat|org
 //!                           --licensee "<이름>" [--email <e>] (--tier trial|pro|org | --features a,b) [--seats N] [--seat-mode named|device|concurrent]
-//!                           [--updates-until YYYY-MM-DD] [--expires YYYY-MM-DD] [--max-major N] [--id NSL-2026-000001] [--product nexa-sql]
+//!                           [--updates-until YYYY-MM-DD|none] [--expires YYYY-MM-DD|none] [--max-major N|none] [--max-version X.Y.Z] [--id NSL-2026-000001] [--product nexa-sql]
+//!   기본(09-27): expires = 발급일 + **3년**(유효기간 · 대장·파일·창에 표시) · updates_until = expires · max_major = 요청 코드의 앱 Major(Major 바뀌면 무효) · max_version 없음.
 //!                           [--out ./issued] [--ledger ./issued/ledger.tsv] [--note "…"] [--no-mail]
 //! nexa-license-tool reissue --key <봉투> [--pass-…] --id <ID> [--add-request <코드>]… [--drop-machine <base32 접두>]… [--out …] [--ledger …] [--note "…"]
 //! nexa-license-tool verify  <파일> (--pub <a.pub>… | --key <봉투>) [--machine <base32>] [--build-date YYYY-MM-DD] [--product nexa-sql]
@@ -77,6 +78,8 @@ const VALUE_OPTS: &[&str] = &[
     "--build-date",
     "--id-prefix",
     "--new-pass-env",
+    "--max-version",
+    "--app-version",
 ];
 
 impl Args {
@@ -126,9 +129,10 @@ fn usage() -> i32 {
          decode-request <NEXAREQ1....>\n\
          issue   --key <envelope> [--pass-env NAME|--pass-stdin] --request <code>... --kind device|user|team-seat|org\n\
                  --licensee <name> [--email <e>] (--tier trial|pro|org | --features a,b) [--seats N] [--seat-mode named|device|concurrent]\n\
-                 [--updates-until D] [--expires D] [--max-major N] [--id ID] [--product nexa-sql] [--out ./issued] [--ledger ./issued/ledger.tsv] [--note ...] [--no-mail]\n\
+                 [--updates-until D|none] [--expires D|none] [--max-major N|none] [--max-version X.Y.Z] [--id ID] [--product nexa-sql] [--out ./issued] [--ledger ./issued/ledger.tsv] [--note ...] [--no-mail]\n\
+                 defaults: expires = issued + 3 years · updates_until = expires · max_major = major of the request app version\n\
          reissue --key <envelope> [--pass-...] --id <ID> [--add-request <code>]... [--drop-machine <prefix>]... [--out ...] [--ledger ...] [--note ...]\n\
-         verify  <file> (--pub <a.pub>... | --key <envelope>) [--machine <base32>] [--build-date D] [--product nexa-sql]\n\
+         verify  <file> (--pub <a.pub>... | --key <envelope>) [--machine <base32>] [--build-date D] [--app-version X.Y.Z] [--product nexa-sql]\n\
          ledger  list | find <text> [--ledger ...]\n\n\
          exit codes: 0 ok · 1 failed · 2 usage · 3 bad request code · 4 key envelope (password/corrupt)"
     );
@@ -481,6 +485,7 @@ struct IssueSpec {
     updates_until: String,
     expires: String,
     max_major: String,
+    max_version: String,
     note: String,
     req_meta: String,
 }
@@ -518,7 +523,18 @@ fn build_doc(s: &IssueSpec, issued: &str) -> Doc {
     if !s.max_major.is_empty() {
         d.set("max_major", &s.max_major);
     }
+    if !s.max_version.is_empty() {
+        d.set("max_version", &s.max_version);
+    }
     d
+}
+
+/// 요청 메타 `os/app`(`linux/nexa-sql/0.0.1`)에서 첫 앱 버전의 Major.
+fn app_major_of(metas: &[String]) -> Option<u64> {
+    let first = metas.first()?;
+    let app = first.split_once('/')?.1; // "nexa-sql/0.0.1"
+    let ver = app.rsplit_once('/').map_or(app, |(_, v)| v);
+    nexa_license::version::major(ver)
 }
 
 fn out_dir(a: &Args) -> PathBuf {
@@ -615,27 +631,48 @@ fn cmd_issue(a: &Args) -> i32 {
     }
     let issued = today();
     let today_days = date::today_days();
-    let updates_until = a
-        .get("--updates-until")
-        .map_or_else(|| date::format_days(today_days + 365), str::to_string);
-    let expires = a.get("--expires").map_or_else(
-        || {
-            if tier == "trial" {
-                date::format_days(today_days + presets::TRIAL_DAYS)
-            } else {
-                String::new()
-            }
-        },
-        str::to_string,
-    );
+    // 유효기간(09-27 사용자): 기본 = 발급일 + 3년(체험 = 14일) · `none` = 영구. updates_until 기본 = 만료일(없으면 3년).
+    let expires = match a.get("--expires") {
+        Some("none") => String::new(),
+        Some(v) => v.to_string(),
+        None if tier == "trial" => date::format_days(today_days + presets::TRIAL_DAYS),
+        None => date::format_days(date::add_years(today_days, presets::TERM_YEARS)),
+    };
+    let updates_until = match a.get("--updates-until") {
+        Some("none") => String::new(),
+        Some(v) => v.to_string(),
+        None if !expires.is_empty() => expires.clone(),
+        None => date::format_days(date::add_years(today_days, presets::TERM_YEARS)),
+    };
     for (l, v) in [("--updates-until", &updates_until), ("--expires", &expires)] {
         if let Err(c) = check_date(l, v) {
             return c;
         }
     }
-    let max_major = a.get("--max-major").unwrap_or("").to_string();
-    if !max_major.is_empty() && max_major.parse::<u32>().is_err() {
-        eprintln!("--max-major must be a number");
+    // Major 조항(09-27 사용자 "Major가 변경되면 무효 = 기본"): 기본 = 첫 요청 코드의 앱 버전 Major · 요청이 없으면 명시 필요 · `none` = 제한 없음.
+    let max_major = match a.get("--max-major") {
+        Some("none") => String::new(),
+        Some(v) => {
+            if v.parse::<u32>().is_err() {
+                eprintln!("--max-major must be a number or none");
+                return EXIT_ARGS;
+            }
+            v.to_string()
+        }
+        None => {
+            match app_major_of(&metas) {
+                Some(m) => m.to_string(),
+                None => {
+                    eprintln!("--max-major N|none is required (no request code to read the app version from)");
+                    return EXIT_ARGS;
+                }
+            }
+        }
+    };
+    // 특정 버전 이후 무효(Major 무관 · 선택): `--max-version 1.4.0` = 1.4.0부터 새 라이선스 필요.
+    let max_version = a.get("--max-version").unwrap_or("").trim().to_string();
+    if !max_version.is_empty() && nexa_license::version::parse(&max_version).is_none() {
+        eprintln!("--max-version must be MAJOR.MINOR.PATCH");
         return EXIT_ARGS;
     }
     let ledger = ledger_path(a);
@@ -657,6 +694,7 @@ fn cmd_issue(a: &Args) -> i32 {
         updates_until,
         expires,
         max_major,
+        max_version,
         note: a.get("--note").unwrap_or("").to_string(),
         req_meta: metas.join(";"),
     };
@@ -672,9 +710,20 @@ fn cmd_issue(a: &Args) -> i32 {
 /// 파일 쓰기 + 대장 1행 + (선택) mail.txt. 자기 검증(앱과 같은 코드)을 먼저 한다.
 fn write_issued(a: &Args, s: &IssueSpec, doc: &Doc, version: u32, mail: bool) -> i32 {
     let text = doc.serialize();
+    // 자기 검증은 "오늘 · 요청 앱 버전"으로(없으면 0.0.0 = 버전 조항 통과).
+    let app_ver = s
+        .req_meta
+        .split(';')
+        .next()
+        .and_then(|m| m.split_once('/'))
+        .map(|(_, app)| app.rsplit_once('/').map_or(app, |(_, v)| v))
+        .filter(|v| nexa_license::version::parse(v).is_some())
+        .unwrap_or("0.0.0")
+        .to_string();
     let product = Product {
         id: Box::leak(s.product.clone().into_boxed_str()),
         build_date: Box::leak(today().into_boxed_str()),
+        version: Box::leak(app_ver.into_boxed_str()),
     };
     let pk: Vec<u8> = base32::decode(doc.get("key").unwrap_or("")).unwrap_or_default();
     let _ = pk;
@@ -746,7 +795,13 @@ fn write_issued(a: &Args, s: &IssueSpec, doc: &Doc, version: u32, mail: bool) ->
     if mail {
         let _ = fs::write(
             dir.join("mail.txt"),
-            presets::mail_text(s.licensee.as_str(), &s.product, &s.id),
+            presets::mail_text(
+                s.licensee.as_str(),
+                &s.product,
+                &s.id,
+                &s.expires,
+                &s.max_major,
+            ),
         );
     }
     println!("id             {}", s.id);
@@ -762,6 +817,22 @@ fn write_issued(a: &Args, s: &IssueSpec, doc: &Doc, version: u32, mail: bool) ->
             "-"
         } else {
             &s.expires
+        }
+    );
+    println!(
+        "max_major      {}",
+        if s.max_major.is_empty() {
+            "-"
+        } else {
+            &s.max_major
+        }
+    );
+    println!(
+        "max_version    {}",
+        if s.max_version.is_empty() {
+            "-"
+        } else {
+            &s.max_version
         }
     );
     println!("file           {}", file.display());
@@ -838,6 +909,7 @@ fn cmd_reissue(a: &Args) -> i32 {
         updates_until: prev.get("updates_until").unwrap_or("").to_string(),
         expires: prev.get("expires").unwrap_or("").to_string(),
         max_major: prev.get("max_major").unwrap_or("").to_string(),
+        max_version: prev.get("max_version").unwrap_or("").to_string(),
         note: a.get("--note").unwrap_or("reissue").to_string(),
         req_meta: metas.join(";"),
     };
@@ -903,6 +975,12 @@ fn cmd_verify(a: &Args) -> i32 {
                 .map_or_else(today, str::to_string)
                 .into_boxed_str(),
         ),
+        version: Box::leak(
+            a.get("--app-version")
+                .unwrap_or("0.0.0")
+                .to_string()
+                .into_boxed_str(),
+        ),
     };
     let machine = match a.get("--machine") {
         None => None,
@@ -942,13 +1020,28 @@ fn cmd_verify(a: &Args) -> i32 {
                     &l.expires
                 }
             );
+            println!(
+                "max_major      {}",
+                l.max_major.map_or("-".to_string(), |m| m.to_string())
+            );
+            println!(
+                "max_version    {}",
+                if l.max_version.is_empty() {
+                    "-"
+                } else {
+                    &l.max_version
+                }
+            );
             println!("key            {}", l.key_id);
             0
         }
         Verdict::Outdated(l) => {
             println!(
-                "verdict        outdated (updates_until {} < build)",
-                l.updates_until
+                "verdict        outdated (updates_until {} · max_major {} · max_version {} vs app {})",
+                l.updates_until,
+                l.max_major.map_or("-".to_string(), |m| m.to_string()),
+                if l.max_version.is_empty() { "-" } else { &l.max_version },
+                product.version
             );
             1
         }

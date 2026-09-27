@@ -182,6 +182,7 @@ mod tests {
     const P: Product = Product {
         id: "nexa-test",
         build_date: "2026-09-27",
+        version: "0.0.1",
     };
     fn tmp(tag: &str) -> PathBuf {
         let nanos = SystemTime::now()
