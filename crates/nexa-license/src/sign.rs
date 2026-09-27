@@ -102,6 +102,7 @@ pub fn keys_rs_source(keys: &[(String, [u8; 32])]) -> String {
          #[derive(Debug, Clone, Copy)]\n\
          pub struct RootKey {\n    pub id: &'static str,\n    pub alg: Alg,\n    pub public: &'static [u8],\n}\n\n\
          /// 현재 유효한 루트 공개키 목록.\n\
+         #[rustfmt::skip] // 생성 파일 — 키 개수와 무관하게 CI `cargo fmt --check`를 통과하도록 모양을 고정한다.\n\
          pub const ROOT_KEYS: &[RootKey] = &[\n",
     );
     for (id, pk) in keys {
@@ -109,10 +110,9 @@ pub fn keys_rs_source(keys: &[(String, [u8; 32])]) -> String {
         s.push_str(id);
         s.push_str("\",\n        alg: Alg::Ed25519,\n        public: &[\n");
         for chunk in pk.chunks(8) {
+            let row: Vec<String> = chunk.iter().map(|b| format!("0x{b:02x},")).collect();
             s.push_str("            ");
-            for b in chunk {
-                s.push_str(&format!("0x{b:02x}, "));
-            }
+            s.push_str(&row.join(" ")); // 줄 끝 공백 없음(rustfmt·에디터 정리와 충돌 방지)
             s.push('\n');
         }
         s.push_str("        ],\n    },\n");
@@ -190,5 +190,10 @@ mod tests {
             "struct 정의 1 + 항목 2"
         );
         assert!(src.contains(&format!("0x{:02x}", kp.public[0])));
+        assert!(
+            src.contains("#[rustfmt::skip]"),
+            "생성 파일은 fmt 검사 대상에서 모양 고정"
+        );
+        assert!(src.lines().all(|l| l == l.trim_end()), "줄 끝 공백 없음");
     }
 }

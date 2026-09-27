@@ -27,7 +27,7 @@ Nexa 계열(nexa-sql · nexa-clip · nexa-beep · nexa-dir)과 비공개 인증 
 | `ed25519` dalek 2.x 검증 어댑터 | `ed25519` | ✅ 09-27 |
 | `machine` 3-OS 기기 ID(SHA-256[..20] · 도메인 태그) | `machine-id` | ✅ 09-27 |
 | `request` 요청 코드 `NEXAREQ1` encode/decode | 항상 | ✅ 09-27 |
-| `keys` SosomLab 루트 공개키(`ROOT_KEYS`) | 항상 | 🚧 빈 목록 — `nexa-license-tool keygen` → `keys-rs`로 채움(nexa-sql docs/91) |
+| `keys` SosomLab 루트 공개키(`ROOT_KEYS`) | 항상 | ✅ 09-27 `root-v1`(Ed25519 · 공개키 base32 `44W1RFJH…`) — `nexa-license-tool keys-rs`가 생성 · 손으로 고치지 않음 · 회전 = nexa-sql docs/91 §5 |
 | `sign` 키 생성 · 문서 서명 · `.pub` 파일 · `keys.rs` 생성 | `issuer` | ✅ 09-27(발급기 전용) |
 | `envelope` 비밀키 봉투 `nxk1`(PBKDF2-HMAC-SHA256 600k · HMAC 스트림 · MAC · RFC 벡터 시험) | `issuer` | ✅ 09-27 |
 | `fs` 폴더를 받아 라이선스 파일 관리(`Store` · 폴더 순서 · 원자적 쓰기 · 변경 서명) | `fs` | ✅ 09-27 |
