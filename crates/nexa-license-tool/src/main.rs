@@ -2,6 +2,7 @@
 //!
 //! ```text
 //! nexa-license-tool keygen  --out <봉투> [--id root-v1] [--pass-env NAME | --pass-stdin] [--iter 600000]
+//! nexa-license-tool rekey   --key <봉투> [--pass-env OLD|--pass-stdin] --out <새 봉투> [--new-pass-env NEW] [--iter N]   # 암호 변경(같은 키)
 //! nexa-license-tool keys-rs <a.pub> [<b.pub>…] [--out keys.rs]            # 앱 라이브러리 keys.rs 본문(회전 = 둘 이상)
 //! nexa-license-tool decode-request <NEXAREQ1.…>                          # 기기 코드 · 메타 보기
 //! nexa-license-tool issue   --key <봉투> [--pass-env NAME|--pass-stdin] --request <코드> [--request …] --kind device|user|team-seat|org
@@ -75,6 +76,7 @@ const VALUE_OPTS: &[&str] = &[
     "--machine",
     "--build-date",
     "--id-prefix",
+    "--new-pass-env",
 ];
 
 impl Args {
@@ -119,6 +121,7 @@ fn usage() -> i32 {
     eprintln!(
         "nexa-license-tool — SosomLab offline license issuer\n\n\
          keygen  --out <envelope> [--id root-v1] [--pass-env NAME | --pass-stdin] [--iter 600000]\n\
+         rekey   --key <envelope> [--pass-env OLD|--pass-stdin] --out <new envelope> [--new-pass-env NEW] [--iter N]\n\
          keys-rs <a.pub> [<b.pub>...] [--out keys.rs]\n\
          decode-request <NEXAREQ1....>\n\
          issue   --key <envelope> [--pass-env NAME|--pass-stdin] --request <code>... --kind device|user|team-seat|org\n\
@@ -143,6 +146,7 @@ fn main() {
     };
     let code = match a.cmd.as_str() {
         "keygen" => cmd_keygen(&a),
+        "rekey" => cmd_rekey(&a),
         "keys-rs" => cmd_keys_rs(&a),
         "decode-request" => cmd_decode_request(&a),
         "issue" => cmd_issue(&a),
@@ -309,6 +313,79 @@ fn cmd_keygen(a: &Args) -> i32 {
         "            2) nexa-license-tool keys-rs {} --out <app>/crates/nexa-license/src/keys.rs",
         pub_path.display()
     );
+    0
+}
+
+/// 암호 변경 — 같은 키쌍을 새 암호·새 salt/nonce로 다시 봉한다(docs/91 §3 · 키 자체는 그대로 · `.pub`도 같이 씀).
+fn cmd_rekey(a: &Args) -> i32 {
+    let Some(out) = a.get("--out") else {
+        return usage();
+    };
+    let out = PathBuf::from(out);
+    if out.exists() {
+        eprintln!(
+            "{} exists — refusing to overwrite a key envelope",
+            out.display()
+        );
+        return 1;
+    }
+    let (kp, id) = match open_key(a) {
+        Ok(k) => k,
+        Err(c) => return c,
+    };
+    let iter: u32 = match a
+        .get("--iter")
+        .map_or(Ok(envelope::DEFAULT_ITER), str::parse)
+    {
+        Ok(n) if n >= 1000 => n,
+        _ => {
+            eprintln!("--iter must be a number ≥ 1000");
+            return EXIT_ARGS;
+        }
+    };
+    let new_pw = match a.get("--new-pass-env") {
+        Some(name) => match std::env::var(name) {
+            Ok(v) if !v.is_empty() => v.into_bytes(),
+            _ => {
+                eprintln!("environment variable {name} is not set");
+                return EXIT_ENVELOPE;
+            }
+        },
+        None => {
+            let p1 = match prompt_secret("new passphrase: ") {
+                Ok(p) => p,
+                Err(c) => return c,
+            };
+            let p2 = match prompt_secret("again: ") {
+                Ok(p) => p,
+                Err(c) => return c,
+            };
+            if p1 != p2 || p1.is_empty() {
+                eprintln!("passphrases differ or empty");
+                return EXIT_ENVELOPE;
+            }
+            p1
+        }
+    };
+    let env = envelope::seal(
+        &kp.secret,
+        &kp.public,
+        &id,
+        &new_pw,
+        iter,
+        &random16(),
+        &random16(),
+    );
+    if let Err(e) = write_private(&out, env.as_bytes()) {
+        eprintln!("{}: {e}", out.display());
+        return 1;
+    }
+    let pub_path = pub_path_of(&out);
+    let _ = fs::write(&pub_path, sign::public_key_file(&id, &kp.public));
+    println!("key id      {id}");
+    println!("public      {}", kp.public_b32());
+    println!("envelope    {}", out.display());
+    println!("note        delete the old envelope only after a backup of the new one (docs/91 §3)");
     0
 }
 

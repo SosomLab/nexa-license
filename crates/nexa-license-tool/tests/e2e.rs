@@ -60,6 +60,30 @@ fn keygen_issue_verify_reissue_ledger() {
         .args(["--pass-env", "NLT_PASS"])
         .env("NLT_PASS", "x"));
     assert_eq!(rc, 1);
+    // rekey: 새 암호 봉투 = 같은 공개키 · 옛 암호로는 못 연다 · 새 암호로 발급 가능
+    let env2 = base.join("root2.key");
+    let (rc, out, err) = run(tool()
+        .args(["rekey", "--key"])
+        .arg(&env_path)
+        .args([
+            "--pass-env",
+            "NLT_PASS",
+            "--new-pass-env",
+            "NLT_NEW",
+            "--iter",
+            "1000",
+            "--out",
+        ])
+        .arg(&env2)
+        .env("NLT_PASS", "s3cret")
+        .env("NLT_NEW", "n3w-pass"));
+    assert_eq!(rc, 0, "{err}");
+    let pub1 = std::fs::read_to_string(&pub_path).expect("pub1");
+    let pub2 = std::fs::read_to_string(base.join("root2.key.pub")).expect("pub2");
+    assert_eq!(pub1, pub2, "같은 키");
+    assert!(out.contains("key id      root-t1"));
+    let (rc, _, _) = run(tool().args(["decode-request", "x"]).env("NLT_PASS", "x"));
+    assert_eq!(rc, 3);
     // keys-rs
     let (rc, out, _) = run(tool().arg("keys-rs").arg(&pub_path));
     assert_eq!(rc, 0);
