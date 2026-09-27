@@ -11,6 +11,8 @@
 //!   기본(09-27): expires = 발급일 + **3년**(유효기간 · 대장·파일·창에 표시) · updates_until = expires · max_major = 요청 코드의 앱 Major(Major 바뀌면 무효) · max_version 없음.
 //!                           [--out ./issued] [--ledger ./issued/ledger.tsv] [--note "…"] [--no-mail]
 //! nexa-license-tool reissue --key <봉투> [--pass-…] --id <ID> [--add-request <코드>]… [--drop-machine <base32 접두>]… [--out …] [--ledger …] [--note "…"]
+//!                           [--renew] [--expires D|none] [--updates-until D|none] [--max-major N|none] [--max-version X.Y.Z|none] [--no-mail]
+//!   기본 = 옛 판의 기간·버전 조항 그대로 · `--renew` = 발급 기본값을 오늘 기준으로 다시(3년 · updates_until = expires · max_major 없으면 대장의 요청 앱 Major) · 개별 옵션이 가장 앞선다.
 //! nexa-license-tool verify  <파일> (--pub <a.pub>… | --key <봉투>) [--machine <base32>] [--build-date YYYY-MM-DD] [--product nexa-sql]
 //! nexa-license-tool ledger  list | find <text> [--ledger …]
 //! ```
@@ -132,6 +134,8 @@ fn usage() -> i32 {
                  [--updates-until D|none] [--expires D|none] [--max-major N|none] [--max-version X.Y.Z] [--id ID] [--product nexa-sql] [--out ./issued] [--ledger ./issued/ledger.tsv] [--note ...] [--no-mail]\n\
                  defaults: expires = issued + 3 years · updates_until = expires · max_major = major of the request app version\n\
          reissue --key <envelope> [--pass-...] --id <ID> [--add-request <code>]... [--drop-machine <prefix>]... [--out ...] [--ledger ...] [--note ...]\n\
+                 [--renew] [--expires D|none] [--updates-until D|none] [--max-major N|none] [--max-version X.Y.Z|none] [--no-mail]\n\
+                 defaults: keep the previous terms · --renew = issue defaults from today (3 years · max_major from the ledger request)\n\
          verify  <file> (--pub <a.pub>... | --key <envelope>) [--machine <base32>] [--build-date D] [--app-version X.Y.Z] [--product nexa-sql]\n\
          ledger  list | find <text> [--ledger ...]\n\n\
          exit codes: 0 ok · 1 failed · 2 usage · 3 bad request code · 4 key envelope (password/corrupt)"
@@ -680,6 +684,14 @@ fn cmd_issue(a: &Args) -> i32 {
         Some(id) => id.to_string(),
         None => ledger::next_id(&ledger, a.get("--id-prefix").unwrap_or("NSL"), &issued[..4]),
     };
+    // 이미 대장에 있는 ID로 `issue`하면 판 번호 1로 옛 파일을 덮고 대장에 v1 행이 겹친다 → 거부(바꿀 땐 `reissue`).
+    if ledger::find_latest(&ledger, &id).is_some() {
+        eprintln!(
+            "{id}: already in ledger {} — use `reissue --id {id}` (add --renew to re-term)",
+            ledger.display()
+        );
+        return 1;
+    }
     let spec = IssueSpec {
         product,
         id,
@@ -895,6 +907,18 @@ fn cmd_reissue(a: &Args) -> i32 {
         );
         return 1;
     }
+    let terms = match reissue_terms(a, &prev, &ledger, id) {
+        Ok(t) => t,
+        Err(c) => return c,
+    };
+    let term_changed = terms
+        != (
+            prev.get("expires").unwrap_or("").to_string(),
+            prev.get("updates_until").unwrap_or("").to_string(),
+            prev.get("max_major").unwrap_or("").to_string(),
+            prev.get("max_version").unwrap_or("").to_string(),
+        );
+    let (expires, updates_until, max_major, max_version) = terms;
     let spec = IssueSpec {
         product: prev.get("product").unwrap_or("nexa-sql").to_string(),
         id: id.to_string(),
@@ -906,11 +930,18 @@ fn cmd_reissue(a: &Args) -> i32 {
         machines,
         seats: prev.get("seats").and_then(|s| s.parse().ok()),
         seat_mode: prev.get("seat_mode").and_then(SeatMode::parse),
-        updates_until: prev.get("updates_until").unwrap_or("").to_string(),
-        expires: prev.get("expires").unwrap_or("").to_string(),
-        max_major: prev.get("max_major").unwrap_or("").to_string(),
-        max_version: prev.get("max_version").unwrap_or("").to_string(),
-        note: a.get("--note").unwrap_or("reissue").to_string(),
+        updates_until,
+        expires,
+        max_major,
+        max_version,
+        note: a
+            .get("--note")
+            .unwrap_or(if term_changed {
+                "reissue (re-term)"
+            } else {
+                "reissue"
+            })
+            .to_string(),
         req_meta: metas.join(";"),
     };
     let (kp, key_id) = match open_key(a) {
@@ -920,7 +951,80 @@ fn cmd_reissue(a: &Args) -> i32 {
     let mut doc = build_doc(&spec, prev.get("issued").unwrap_or(&today()));
     doc.set("reissued", &today());
     kp.sign_license(&mut doc, &key_id);
-    write_issued(a, &spec, &doc, last.version + 1, false)
+    // 기간·조항이 바뀐 재발급은 고객에게 새 유효기간을 알려야 하므로 mail.txt도 다시 쓴다.
+    write_issued(
+        a,
+        &spec,
+        &doc,
+        last.version + 1,
+        term_changed && !a.flag("--no-mail"),
+    )
+}
+
+/// 재발급의 (expires, updates_until, max_major, max_version) — 옛 판 → `--renew` 기본값 → 개별 옵션 순으로 덮는다(09-27).
+fn reissue_terms(
+    a: &Args,
+    prev: &Doc,
+    ledger_file: &std::path::Path,
+    id: &str,
+) -> Result<(String, String, String, String), i32> {
+    let mut expires = prev.get("expires").unwrap_or("").to_string();
+    let mut updates_until = prev.get("updates_until").unwrap_or("").to_string();
+    let mut max_major = prev.get("max_major").unwrap_or("").to_string();
+    let mut max_version = prev.get("max_version").unwrap_or("").to_string();
+    if a.flag("--renew") {
+        let today_days = date::today_days();
+        expires = if prev.get("tier") == Some("trial") {
+            date::format_days(today_days + presets::TRIAL_DAYS)
+        } else {
+            date::format_days(date::add_years(today_days, presets::TERM_YEARS))
+        };
+        updates_until = expires.clone();
+        if max_major.is_empty() && a.get("--max-major").is_none() {
+            // 옛 판에 조항이 없으면 대장에 남은 요청 메타(`linux/nexa-sql/0.0.1`)에서 앱 Major를 읽는다.
+            let metas: Vec<String> = ledger::read(ledger_file)
+                .into_iter()
+                .filter(|r| r.id == id)
+                .flat_map(|r| {
+                    r.req_meta
+                        .split(';')
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                })
+                .filter(|m| !m.is_empty())
+                .collect();
+            match app_major_of(&metas) {
+                Some(m) => max_major = m.to_string(),
+                None => {
+                    eprintln!(
+                        "--renew: no app version in the ledger for {id} — pass --max-major N|none"
+                    );
+                    return Err(EXIT_ARGS);
+                }
+            }
+        }
+    }
+    let pick = |name: &str, cur: &mut String| match a.get(name) {
+        Some("none") => cur.clear(),
+        Some(v) => *cur = v.trim().to_string(),
+        None => {}
+    };
+    pick("--expires", &mut expires);
+    pick("--updates-until", &mut updates_until);
+    pick("--max-major", &mut max_major);
+    pick("--max-version", &mut max_version);
+    for (l, v) in [("--updates-until", &updates_until), ("--expires", &expires)] {
+        check_date(l, v)?;
+    }
+    if !max_major.is_empty() && max_major.parse::<u32>().is_err() {
+        eprintln!("--max-major must be a number or none");
+        return Err(EXIT_ARGS);
+    }
+    if !max_version.is_empty() && nexa_license::version::parse(&max_version).is_none() {
+        eprintln!("--max-version must be MAJOR.MINOR.PATCH or none");
+        return Err(EXIT_ARGS);
+    }
+    Ok((expires, updates_until, max_major, max_version))
 }
 
 // ─────────────────────────────────────────────────────────────── verify

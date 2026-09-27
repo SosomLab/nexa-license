@@ -46,6 +46,7 @@ nexa-license-tool decode-request NEXAREQ1....                    # 고객 요청
 nexa-license-tool issue --key root.key --request NEXAREQ1.... --kind user --licensee "ACME" --tier pro   # ./issued/<id>/nexa-sql.license + mail.txt + ledger.tsv
 #   기본(09-27): 유효기간 expires = 발급일 + 3년 · updates_until = expires · max_major = 요청 앱의 Major(Major 바뀌면 무효) · --max-version X.Y.Z = 그 버전부터 무효(Major 무관) · --expires none = 영구
 nexa-license-tool reissue --key root.key --id NSL-2026-000001 --add-request NEXAREQ1....                   # 기기 추가(5대) · v2 · 옛 판 보존
+nexa-license-tool reissue --key root.key --id NSL-2026-000001 --renew                                    # 같은 ID로 기간·조항 다시(오늘+3년 · max_major = 대장의 요청 앱 Major · mail.txt 다시) · 개별 --expires/--updates-until/--max-major/--max-version 가능 · 기존 ID로 issue = 거부
 nexa-license-tool verify ./issued/NSL-2026-000001/nexa-sql.license --pub root.key.pub --machine <base32>   # 앱과 같은 검증 코드
 nexa-license-tool ledger list | find acme
 ```

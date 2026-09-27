@@ -368,3 +368,111 @@ fn keygen_issue_verify_reissue_ledger() {
     );
     let _ = std::fs::remove_dir_all(&base);
 }
+
+/// 정책 전 발급분(만료 없음 · Major 조항 없음)을 같은 ID로 새 정책에 맞추기(09-27): `reissue --renew` → 3년 · max_major = 요청 앱 Major ·
+/// mail.txt 다시 · 개별 옵션 · 기존 ID로 `issue` = 거부.
+#[test]
+fn reissue_renew_applies_current_terms() {
+    let base = tmp();
+    let key = base.join("root.key");
+    let (rc, _, err) = run(tool()
+        .args(["keygen", "--out"])
+        .arg(&key)
+        .args([
+            "--id",
+            "root-t1",
+            "--pass-env",
+            "NLT_PASS",
+            "--iter",
+            "1000",
+        ])
+        .env("NLT_PASS", "s3cret"));
+    assert_eq!(rc, 0, "{err}");
+    let pubk = base.join("root.key.pub");
+    let issued = base.join("issued");
+    let m = [5u8; 20];
+    let r = req(m, "linux");
+    let issue = |extra: &[&str]| {
+        run(tool()
+            .args(["issue", "--key"])
+            .arg(&key)
+            .args(["--pass-env", "NLT_PASS", "--request", &r, "--kind", "user"])
+            .args(["--licensee", "linux", "--tier", "pro", "--no-mail"])
+            .args(extra)
+            .arg("--out")
+            .arg(&issued)
+            .env("NLT_PASS", "s3cret"))
+    };
+    let reissue = |extra: &[&str]| {
+        run(tool()
+            .args(["reissue", "--key"])
+            .arg(&key)
+            .args(["--pass-env", "NLT_PASS", "--id", "NSL-2026-000001"])
+            .args(extra)
+            .arg("--out")
+            .arg(&issued)
+            .env("NLT_PASS", "s3cret"))
+    };
+    // 정책 전 모양: 만료 없음 · Major 조항 없음
+    let (rc, out, err) = issue(&[
+        "--id",
+        "NSL-2026-000001",
+        "--expires",
+        "none",
+        "--updates-until",
+        "2027-09-27",
+        "--max-major",
+        "none",
+    ]);
+    assert_eq!(rc, 0, "{err}");
+    assert!(
+        out.contains("expires        -") && out.contains("max_major      -"),
+        "{out}"
+    );
+    // 같은 ID로 issue = 거부(파일·대장 보호)
+    let (rc, _, err) = issue(&["--id", "NSL-2026-000001"]);
+    assert_eq!(rc, 1);
+    assert!(err.contains("reissue"), "{err}");
+    // 옵션 없는 reissue = 조항 그대로
+    let (rc, out, err) = reissue(&[]);
+    assert_eq!(rc, 0, "{err}");
+    assert!(out.contains("expires        -"), "{out}");
+    let dir = issued.join("NSL-2026-000001");
+    assert!(!dir.join("mail.txt").exists(), "조항 그대로 = mail 없음");
+    // --renew = 오늘 + 3년 · updates_until = expires · max_major = 대장의 요청 앱 Major(0)
+    let (rc, out, err) = reissue(&["--renew"]);
+    assert_eq!(rc, 0, "{err}");
+    let three = nexa_license::date::format_days(nexa_license::date::add_years(
+        nexa_license::date::today_days(),
+        3,
+    ));
+    assert!(out.contains("version        3"), "{out}");
+    assert!(out.contains(&format!("expires        {three}")), "{out}");
+    assert!(out.contains("max_major      0"), "{out}");
+    assert!(dir.join("nexa-sql.license.v2").is_file());
+    let mail = std::fs::read_to_string(dir.join("mail.txt")).expect("mail");
+    assert!(mail.contains(&three) && mail.contains("0.x"), "{mail}");
+    let lic = std::fs::read_to_string(dir.join("nexa-sql.license")).expect("lic");
+    assert!(lic.contains("reissued="), "{lic}");
+    assert!(lic.contains(&format!("updates_until={three}")), "{lic}");
+    // 검증: 0.x = 정식 · 1.0.0 = outdated
+    let verify = |ver: &str| {
+        run(tool()
+            .arg("verify")
+            .arg(dir.join("nexa-sql.license"))
+            .arg("--pub")
+            .arg(&pubk)
+            .args(["--machine", &base32::encode(&m), "--app-version", ver]))
+    };
+    assert_eq!(verify("0.9.0").0, 0);
+    assert_eq!(verify("1.0.0").0, 1);
+    // 개별 옵션이 앞선다 · 잘못된 값 = 2
+    let (rc, out, err) = reissue(&["--max-version", "0.5.0", "--expires", "2030-01-01"]);
+    assert_eq!(rc, 0, "{err}");
+    assert!(out.contains("expires        2030-01-01") && out.contains("max_version    0.5.0"));
+    assert_eq!(verify("0.4.9").0, 0);
+    assert_eq!(verify("0.5.0").0, 1);
+    assert_eq!(reissue(&["--max-version", "x"]).0, 2);
+    assert_eq!(reissue(&["--expires", "2030-13-01"]).0, 2);
+    let _ = std::fs::remove_dir_all(&base);
+}
