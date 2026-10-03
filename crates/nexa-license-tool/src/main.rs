@@ -682,7 +682,13 @@ fn cmd_issue(a: &Args) -> i32 {
     let ledger = ledger_path(a);
     let id = match a.get("--id") {
         Some(id) => id.to_string(),
-        None => ledger::next_id(&ledger, a.get("--id-prefix").unwrap_or("NSL"), &issued[..4]),
+        None => {
+            // 접두 기본 = 제품별(nexa-sql NSL · nexa-dir NDL · LIC-166) · `--id-prefix`가 이긴다.
+            let prefix = a
+                .get("--id-prefix")
+                .map_or_else(|| presets::id_prefix_for(&product), str::to_string);
+            ledger::next_id(&ledger, &prefix, &issued[..4])
+        }
     };
     // 이미 대장에 있는 ID로 `issue`하면 판 번호 1로 옛 파일을 덮고 대장에 v1 행이 겹친다 → 거부(바꿀 땐 `reissue`).
     if ledger::find_latest(&ledger, &id).is_some() {

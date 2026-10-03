@@ -476,3 +476,119 @@ fn reissue_renew_applies_current_terms() {
     assert_eq!(reissue(&["--expires", "2030-13-01"]).0, 2);
     let _ = std::fs::remove_dir_all(&base);
 }
+
+/// nexa-dir 제품(nexa-dir3 LIC-170): `--product nexa-dir` → `nexa-dir.license` · ID 접두 `NDL` · mail.txt = GUI 안내(CLI 없음) ·
+/// `app=nexa-dir/<ver>` 메타에서 Major 추출(max_major 기본 = 요청 앱 Major) · verify 통과.
+#[test]
+fn issue_nexa_dir_product_prefix_and_mail() {
+    let base = tmp();
+    let env_path = base.join("root.key");
+    let (rc, _, err) = run(tool()
+        .args(["keygen", "--out"])
+        .arg(&env_path)
+        .args([
+            "--id",
+            "root-d1",
+            "--pass-env",
+            "NLT_PASS",
+            "--iter",
+            "1000",
+        ])
+        .env("NLT_PASS", "s3cret"));
+    assert_eq!(rc, 0, "{err}");
+    let mut m = Doc::default();
+    m.set("os", "windows");
+    m.set("app", "nexa-dir/0.23.0");
+    m.set("n", "Dir User");
+    let r = request::encode(&[9u8; 20], &m);
+    let issued = base.join("issued");
+    let (rc, out, err) = run(tool()
+        .args(["issue", "--key"])
+        .arg(&env_path)
+        .args([
+            "--pass-env",
+            "NLT_PASS",
+            "--request",
+            &r,
+            "--product",
+            "nexa-dir",
+            "--kind",
+            "user",
+            "--licensee",
+            "Dir User",
+            "--email",
+            "d@u.c",
+            "--tier",
+            "pro",
+            "--out",
+        ])
+        .arg(&issued)
+        .env("NLT_PASS", "s3cret"));
+    assert_eq!(rc, 0, "{err}");
+    let id = out
+        .lines()
+        .find_map(|l| l.strip_prefix("id             "))
+        .expect("id")
+        .trim()
+        .to_string();
+    assert!(id.starts_with("NDL-"), "제품별 접두: {id}");
+    let dir = issued.join(&id);
+    let file = dir.join("nexa-dir.license");
+    assert!(file.is_file(), "제품 이름 파일");
+    let d = Doc::parse(&std::fs::read_to_string(&file).expect("read"));
+    assert_eq!(d.get("product"), Some("nexa-dir"));
+    assert_eq!(
+        d.get("max_major"),
+        Some("0"),
+        "요청 앱 nexa-dir/0.23.0 → Major 0"
+    );
+    let mail = std::fs::read_to_string(dir.join("mail.txt")).expect("mail");
+    assert!(
+        mail.contains("도움말 ▸ 라이선스…") && mail.contains("Help ▸ License…"),
+        "{mail}"
+    );
+    assert!(
+        !mail.contains("nsql license"),
+        "nexa-dir 안내에 nsql CLI 없음: {mail}"
+    );
+    // verify = 제품 nexa-dir · 요청 기기 → licensed.
+    let (rc, out, err) = run(tool()
+        .arg("verify")
+        .arg(&file)
+        .arg("--pub")
+        .arg(base.join("root.key.pub"))
+        .args([
+            "--product",
+            "nexa-dir",
+            "--machine",
+            &base32::encode(&[9u8; 20]),
+        ]));
+    assert_eq!(rc, 0, "{err}\n{out}");
+    assert!(out.to_ascii_lowercase().contains("licensed"), "{out}");
+    // `--id-prefix`는 기본을 이긴다.
+    let (rc, out, err) = run(tool()
+        .args(["issue", "--key"])
+        .arg(&env_path)
+        .args([
+            "--pass-env",
+            "NLT_PASS",
+            "--request",
+            &r,
+            "--product",
+            "nexa-dir",
+            "--kind",
+            "user",
+            "--licensee",
+            "Dir User",
+            "--tier",
+            "pro",
+            "--id-prefix",
+            "ZZZ",
+            "--no-mail",
+            "--out",
+        ])
+        .arg(&issued)
+        .env("NLT_PASS", "s3cret"));
+    assert_eq!(rc, 0, "{err}");
+    assert!(out.contains("id             ZZZ-"), "{out}");
+}

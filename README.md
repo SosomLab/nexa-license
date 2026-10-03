@@ -61,7 +61,7 @@ nexa-license = { path = "../nexa-license/crates/nexa-license", features = ["ed25
 
 - nexa-sql → `nsql-license`(얇은 층: `Feature` 매핑 · 상태 · 게이트)
 - nexa-license-server(비공개) → `nexa-licensed`(서버) · `nexa-license-tool`(발급기 · 서명·키 생성은 그쪽에서 구현) — `protocol`
-- nexa-dir2 → `ed25519` feature를 끄고 `alg=p256` CNG 어댑터를 그쪽 저장소에서 구현(외부 crate 0 유지)
+- nexa-dir3(크로스플랫폼 · dir2 후속) → `ndir-license`(얇은 층 · `ed25519 + machine-id + fs` 소비자 · 제품 `nexa-dir` · ID 접두 `NDL`) — dir2 시절의 `p256` CNG 어댑터 계획은 폐기(Windows 전용이라 3-OS 불가)
 
 ## 개발
 

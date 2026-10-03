@@ -2,11 +2,11 @@
 //!
 //! **설계 SSOT는 `SosomLab/nexa-sql`의 `docs/23-license-activation.md`(형식 · 판정)와
 //! `docs/25-license-tiers-and-server.md`(티어 · 인증 서버 · 저장소 분리 · §10 범용성 점검)다.** 이 crate는 그 문서의
-//! "라이브러리" 칸을 구현한다 — 앱(nexa-sql · nexa-clip · nexa-beep · nexa-dir2)과 비공개 인증 서버가 같은 판을 쓴다.
+//! "라이브러리" 칸을 구현한다 — 앱(nexa-sql · nexa-clip · nexa-beep · nexa-dir3)과 비공개 인증 서버가 같은 판을 쓴다.
 //!
 //! 원칙(docs/25 §10)
 //! - **앱을 모른다.** `Feature` 열거형 · 사용자 문자열 · 저장 폴더 규칙 · 설정 키는 호출측이 준다. 오류는 열거형만.
-//! - **기본 의존 0.** 서명 어댑터(`ed25519` · dir2용 `p256`은 그쪽 저장소의 CNG 어댑터) · 기기 ID · 파일 · 프로토콜은 feature.
+//! - **기본 의존 0.** 서명 어댑터(`ed25519` — nexa-dir3도 이것 · 옛 dir2 `p256` CNG 계획은 폐기) · 기기 ID · 파일 · 프로토콜은 feature.
 //! - **한 형식.** 라이선스 · 리스 · 요청 코드 메타 · 서버 메시지가 전부 같은 key=value 문서([`format`])와 같은 정규화 규칙을 쓴다.
 //! - 제품 구분은 서명 본문의 `product=`가 한다 — 서명 도메인·기기 ID 도메인은 계열 공통(한 루트 키 · 한 PC = 한 기기 코드).
 //!
