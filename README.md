@@ -7,6 +7,8 @@ Nexa 계열(nexa-sql · nexa-clip · nexa-beep · nexa-dir)과 비공개 인증 
 > [docs/23 정품 인증·기능 게이트](https://github.com/SosomLab/nexa-sql/blob/main/docs/23-license-activation.md) ·
 > [docs/25 라이선스 종류·인증 서버·저장소 분리(§10 범용성 점검)](https://github.com/SosomLab/nexa-sql/blob/main/docs/25-license-tiers-and-server.md).
 > 결정은 nexa-sql `docs/10` DR-25 · DR-26.
+>
+> **소비자(nexa-sql · nexa-dir3 · 발급 도구 사용자)는 pull 뒤 [docs/CONSUMER-CHANGES.md](docs/CONSUMER-CHANGES.md)의 `동작 변경`·`미검증` 행부터 확인한다** — nexa-license를 고치는 모든 커밋은 그 표에 한 줄을 더한다(2026-10-03 사용자 지시).
 
 ## 원칙
 
