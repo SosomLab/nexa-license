@@ -7,7 +7,7 @@
 //! nexa-license-tool decode-request <NEXAREQ1.…>                          # 기기 코드 · 메타 보기
 //! nexa-license-tool issue   --key <봉투> [--pass-env NAME|--pass-stdin] --request <코드> [--request …] --kind device|user|team-seat|org
 //!                           --licensee "<이름>" [--email <e>] (--tier trial|pro|org | --features a,b) [--seats N] [--seat-mode named|device|concurrent]
-//!                           [--updates-until YYYY-MM-DD|none] [--expires YYYY-MM-DD|none] [--max-major N|none] [--max-version X.Y.Z] [--id NSL-2026-000001] [--product nexa-sql]
+//!                           [--updates-until YYYY-MM-DD|none] [--expires YYYY-MM-DD|none] [--max-major N|none] [--max-version X.Y.Z] [--id NSL-2026-000001] [--product <요청 코드의 앱 제품 · 없으면 nexa-sql>]
 //!   기본(09-27): expires = 발급일 + **3년**(유효기간 · 대장·파일·창에 표시) · updates_until = expires · max_major = 요청 코드의 앱 Major(Major 바뀌면 무효) · max_version 없음.
 //!                           [--out ./issued] [--ledger ./issued/ledger.tsv] [--note "…"] [--no-mail]
 //! nexa-license-tool reissue --key <봉투> [--pass-…] --id <ID> [--add-request <코드>]… [--drop-machine <base32 접두>]… [--out …] [--ledger …] [--note "…"]
@@ -131,7 +131,7 @@ fn usage() -> i32 {
          decode-request <NEXAREQ1....>\n\
          issue   --key <envelope> [--pass-env NAME|--pass-stdin] --request <code>... --kind device|user|team-seat|org\n\
                  --licensee <name> [--email <e>] (--tier trial|pro|org | --features a,b) [--seats N] [--seat-mode named|device|concurrent]\n\
-                 [--updates-until D|none] [--expires D|none] [--max-major N|none] [--max-version X.Y.Z] [--id ID] [--product nexa-sql] [--out ./issued] [--ledger ./issued/ledger.tsv] [--note ...] [--no-mail]\n\
+                 [--updates-until D|none] [--expires D|none] [--max-major N|none] [--max-version X.Y.Z] [--id ID] [--product P (default: app of --request, else nexa-sql)] [--out ./issued] [--ledger ./issued/ledger.tsv] [--note ...] [--no-mail]\n\
                  defaults: expires = issued + 3 years · updates_until = expires · max_major = major of the request app version\n\
          reissue --key <envelope> [--pass-...] --id <ID> [--add-request <code>]... [--drop-machine <prefix>]... [--out ...] [--ledger ...] [--note ...]\n\
                  [--renew] [--expires D|none] [--updates-until D|none] [--max-major N|none] [--max-version X.Y.Z|none] [--no-mail]\n\
@@ -549,8 +549,61 @@ fn ledger_path(a: &Args) -> PathBuf {
         .map_or_else(|| out_dir(a).join("ledger.tsv"), PathBuf::from)
 }
 
+/// 요청 코드 메타 `app=<제품>/<버전>`의 제품 id(없거나 비면 None — 옛 요청 코드).
+fn request_product(r: &request::Request) -> Option<String> {
+    let app = r.meta.get("app")?;
+    let p = app.split('/').next().unwrap_or("").trim();
+    (!p.is_empty() && p != "?").then(|| p.to_string())
+}
+
+/// 제품 단위 분리(사용자 10-06): 요청 코드가 다른 제품의 것이면 거부한다 — 한 라이선스 파일 = 한 제품(번들 `a,b` · `*`는 포함 여부).
+fn check_request_product(product: &str, r: &request::Request) -> Result<(), i32> {
+    let Some(p) = request_product(r) else {
+        return Ok(());
+    };
+    // `Product::accepts`와 같은 규칙(정확 일치 · 쉼표 목록 · `*`).
+    if product
+        .split(',')
+        .map(str::trim)
+        .any(|x| x == "*" || x == p)
+    {
+        Ok(())
+    } else {
+        eprintln!(
+            "request code is for product {p}, not {product} — issue a separate license per product"
+        );
+        Err(EXIT_REQUEST)
+    }
+}
+
+/// `--product`가 없으면 요청 코드의 앱 제품(모두 같을 때) · 그것도 없으면 `nexa-sql`(종전 기본).
+fn issue_product(a: &Args) -> Result<String, i32> {
+    if let Some(p) = a.get("--product") {
+        return Ok(p.trim().to_string());
+    }
+    let mut found: Option<String> = None;
+    for code in a.all("--request") {
+        let Some(p) = request::decode(code).as_ref().and_then(request_product) else {
+            continue;
+        };
+        match &found {
+            Some(f) if *f != p => {
+                eprintln!(
+                    "request codes mix products ({f}, {p}) — issue a separate license per product"
+                );
+                return Err(EXIT_REQUEST);
+            }
+            _ => found = Some(p),
+        }
+    }
+    Ok(found.unwrap_or_else(|| "nexa-sql".to_string()))
+}
+
 fn cmd_issue(a: &Args) -> i32 {
-    let product = a.get("--product").unwrap_or("nexa-sql").to_string();
+    let product = match issue_product(a) {
+        Ok(p) => p,
+        Err(c) => return c,
+    };
     let Some(kind) = a.get("--kind").and_then(Kind::parse) else {
         eprintln!("--kind device|user|team-seat|org is required");
         return EXIT_ARGS;
@@ -599,6 +652,9 @@ fn cmd_issue(a: &Args) -> i32 {
             Ok(r) => r,
             Err(c) => return c,
         };
+        if let Err(c) = check_request_product(&product, &r) {
+            return c;
+        }
         let m = base32::encode(&r.machine);
         if machines.contains(&m) {
             eprintln!("duplicate machine in requests: {}", machine_prefix(&m));
@@ -889,12 +945,16 @@ fn cmd_reissue(a: &Args) -> i32 {
             return 1;
         }
     }
+    let prev_product = prev.get("product").unwrap_or("nexa-sql").to_string();
     let mut metas = Vec::new();
     for code in a.all("--add-request") {
         let r = match decode_request(code) {
             Ok(r) => r,
             Err(c) => return c,
         };
+        if let Err(c) = check_request_product(&prev_product, &r) {
+            return c;
+        }
         let m = base32::encode(&r.machine);
         if !machines.contains(&m) {
             machines.push(m);
@@ -926,7 +986,7 @@ fn cmd_reissue(a: &Args) -> i32 {
         );
     let (expires, updates_until, max_major, max_version) = terms;
     let spec = IssueSpec {
-        product: prev.get("product").unwrap_or("nexa-sql").to_string(),
+        product: prev_product,
         id: id.to_string(),
         kind,
         licensee: prev.get("licensee").unwrap_or("").to_string(),

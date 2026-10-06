@@ -592,3 +592,91 @@ fn issue_nexa_dir_product_prefix_and_mail() {
     assert_eq!(rc, 0, "{err}");
     assert!(out.contains("id             ZZZ-"), "{out}");
 }
+
+/// 제품 단위 분리(사용자 10-06): 같은 PC라도 nexa-sql · nexa-dir 라이선스는 따로 — 요청 코드의 앱 제품과 `--product`가 다르면 거부 · 생략하면 요청 코드에서 추론.
+#[test]
+fn issue_is_per_product_and_rejects_foreign_request_codes() {
+    let base = tmp();
+    let env_path = base.join("root.key");
+    let (rc, _, err) = run(tool()
+        .args(["keygen", "--out"])
+        .arg(&env_path)
+        .args([
+            "--id",
+            "root-p1",
+            "--pass-env",
+            "NLT_PASS",
+            "--iter",
+            "1000",
+        ])
+        .env("NLT_PASS", "s3cret"));
+    assert_eq!(rc, 0, "{err}");
+    let code = |app: &str| {
+        let mut m = Doc::default();
+        m.set("os", "windows");
+        m.set("app", app);
+        request::encode(&[5u8; 20], &m)
+    };
+    let (sql, dir) = (code("nexa-sql/0.1.2"), code("nexa-dir/0.23.0"));
+    let issued = base.join("issued");
+    let issue = |extra: &[&str]| {
+        run(tool()
+            .args(["issue", "--key"])
+            .arg(&env_path)
+            .args([
+                "--pass-env",
+                "NLT_PASS",
+                "--kind",
+                "user",
+                "--licensee",
+                "Same PC",
+                "--tier",
+                "pro",
+                "--no-mail",
+            ])
+            .args(extra)
+            .arg("--out")
+            .arg(&issued)
+            .env("NLT_PASS", "s3cret"))
+    };
+    let id_of = |out: &str| {
+        out.lines()
+            .find_map(|l| l.strip_prefix("id             "))
+            .expect("id")
+            .trim()
+            .to_string()
+    };
+    // 다른 제품의 요청 코드 = 3(요청 코드 무효) · 섞인 요청 = 3.
+    let (rc, _, err) = issue(&["--request", &dir, "--product", "nexa-sql"]);
+    assert_eq!(rc, 3, "{err}");
+    assert!(err.contains("nexa-dir"), "{err}");
+    let (rc, _, err) = issue(&["--request", &sql, "--request", &code("nexa-dir/0.1.0")]);
+    assert_eq!(rc, 3, "{err}");
+    // `--product` 생략 = 요청 코드의 제품 · 같은 기기라도 제품마다 다른 ID · 다른 파일.
+    let (rc, out, err) = issue(&["--request", &dir]);
+    assert_eq!(rc, 0, "{err}");
+    let dir_id = id_of(&out);
+    assert!(dir_id.starts_with("NDL-"), "{dir_id}");
+    assert!(issued.join(&dir_id).join("nexa-dir.license").is_file());
+    let (rc, out, err) = issue(&["--request", &sql]);
+    assert_eq!(rc, 0, "{err}");
+    let sql_id = id_of(&out);
+    assert!(sql_id.starts_with("NSL-"), "{sql_id}");
+    assert!(issued.join(&sql_id).join("nexa-sql.license").is_file());
+    // 재발급 기기 추가도 제품이 맞아야 한다.
+    let (rc, _, err) = run(tool()
+        .args(["reissue", "--key"])
+        .arg(&env_path)
+        .args([
+            "--pass-env",
+            "NLT_PASS",
+            "--id",
+            &sql_id,
+            "--add-request",
+            &code("nexa-dir/0.23.0"),
+            "--out",
+        ])
+        .arg(&issued)
+        .env("NLT_PASS", "s3cret"));
+    assert_eq!(rc, 3, "{err}");
+}
