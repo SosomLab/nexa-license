@@ -34,7 +34,7 @@ pub(crate) fn id_prefix_for(product: &str) -> String {
     }
 }
 
-/// 제품별 적용 안내(한 · 영) — CLI가 없는 제품(nexa-dir)은 GUI 경로만 안내한다(nexa-dir3 LIC-165 · 종전 `nsql license …` 하드코딩이 틀린 안내였다).
+/// 제품별 적용 안내(한 · 영) — CLI가 없는 제품(nexa-dir)은 GUI 경로만 · nexa-beep은 GUI + `--license install`(nexa-dir3 LIC-165 · 종전 `nsql license …` 하드코딩이 틀린 안내였다).
 fn apply_steps(product: &str) -> (String, String) {
     match product {
         "nexa-dir" => (
@@ -49,6 +49,23 @@ fn apply_steps(product: &str) -> (String, String) {
             format!(
                 "How to apply: 1) save the attached {product}.license  2) Nexa Dir ▸ Help ▸ License… ▸ [Open license file…]\n\
                  3) the status line in that window turns to licensed. To add or replace a PC, send the one-line code from Help ▸ License… ▸ [Copy request code] on that PC.\n"
+            ),
+        ),
+        // nexa-beep(10-09 · beep 설정 개편 docs/50 P1-b): GUI = 도움말 ▸ 라이선스… · CLI = `nexa-beep --license install`.
+        "nexa-beep" => (
+            format!(
+                "적용 방법(3줄):\n\
+                 1) 첨부한 {product}.license 파일을 저장합니다.\n\
+                 2) Nexa Beep ▸ 도움말 ▸ 라이선스… ▸ [라이선스 파일 열기…]에서 그 파일을 고릅니다.\n\
+                    (터미널: nexa-beep --license install <저장한 파일>)\n\
+                 3) 같은 창의 상태 줄이 licensed 로 바뀌면 끝입니다.\n\
+                 \n\
+                 PC를 추가·교체하려면 그 PC에서 도움말 ▸ 라이선스… ▸ [요청 코드 복사]로 만든 한 줄 코드를 보내 주세요(연 5회 재발급).\n"
+            ),
+            format!(
+                "How to apply: 1) save the attached {product}.license  2) Nexa Beep ▸ Help ▸ License… ▸ [Open license file…]\n\
+                 (terminal: `nexa-beep --license install <file>`)  3) the status line in that window turns to licensed.\n\
+                 To add or replace a PC, send the one-line code from Help ▸ License… ▸ [Copy request code] on that PC.\n"
             ),
         ),
         _ => (
@@ -108,6 +125,7 @@ mod tests {
         assert_eq!(id_prefix_for("nexa-sql"), "NSL");
         assert_eq!(id_prefix_for("nexa-dir"), "NDL");
         assert_eq!(id_prefix_for("nexa-clip"), "NCL");
+        assert_eq!(id_prefix_for("nexa-beep"), "NBL", "자동 머리글자(N·B + L)");
         assert_eq!(id_prefix_for("x"), "XL");
     }
 
@@ -120,6 +138,17 @@ mod tests {
             "dir 제품에 없는 CLI를 안내하지 않는다"
         );
         assert!(dir.contains("nexa-dir.license") && dir.contains("2029-10-03까지"));
+        let beep = mail_text("홍길동", "nexa-beep", "NBL-2026-000001", "2029-10-09", "");
+        assert!(
+            beep.contains("Nexa Beep ▸ 도움말 ▸ 라이선스…")
+                && beep.contains("Nexa Beep ▸ Help ▸ License…")
+        );
+        assert!(beep.contains("nexa-beep --license install"));
+        assert!(
+            !beep.contains("nsql license"),
+            "beep 제품에 nexa-sql CLI를 안내하지 않는다"
+        );
+        assert!(beep.contains("nexa-beep.license") && beep.contains("NBL-2026-000001"));
         let sql = mail_text("ACME", "nexa-sql", "NSL-2026-000001", "", "");
         assert!(sql.contains("nsql license install") && sql.contains("무기한"));
     }
