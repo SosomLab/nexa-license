@@ -68,6 +68,23 @@ fn apply_steps(product: &str) -> (String, String) {
                  To add or replace a PC, send the one-line code from Help ▸ License… ▸ [Copy request code] on that PC.\n"
             ),
         ),
+        // nexa-clip(10-10 · clip 설정 개편 = beep docs/50 동일 절차): GUI = 설정 ▸ 정보 ▸ 라이선스… · CLI = `nexa-clip --license install`.
+        "nexa-clip" => (
+            format!(
+                "적용 방법(3줄):\n\
+                 1) 첨부한 {product}.license 파일을 저장합니다.\n\
+                 2) Nexa Clip ▸ 설정 ▸ 정보 ▸ 라이선스… ▸ [라이선스 파일 열기…]에서 그 파일을 고릅니다.\n\
+                    (터미널: nexa-clip --license install <저장한 파일>)\n\
+                 3) 같은 창의 상태 줄이 licensed 로 바뀌면 끝입니다.\n\
+                 \n\
+                 PC를 추가·교체하려면 그 PC에서 설정 ▸ 정보 ▸ 라이선스… ▸ [요청 코드 복사]로 만든 한 줄 코드를 보내 주세요(연 5회 재발급).\n"
+            ),
+            format!(
+                "How to apply: 1) save the attached {product}.license  2) Nexa Clip ▸ Settings ▸ About ▸ License… ▸ [Open license file…]\n\
+                 (terminal: `nexa-clip --license install <file>`)  3) the status line in that window turns to licensed.\n\
+                 To add or replace a PC, send the one-line code from Settings ▸ About ▸ License… ▸ [Copy request code] on that PC.\n"
+            ),
+        ),
         _ => (
             format!(
                 "적용 방법(3줄):\n\
@@ -149,6 +166,17 @@ mod tests {
             "beep 제품에 nexa-sql CLI를 안내하지 않는다"
         );
         assert!(beep.contains("nexa-beep.license") && beep.contains("NBL-2026-000001"));
+        let clip = mail_text("홍길동", "nexa-clip", "NCL-2026-000001", "2029-10-10", "");
+        assert!(
+            clip.contains("Nexa Clip ▸ 설정 ▸ 정보 ▸ 라이선스…")
+                && clip.contains("Nexa Clip ▸ Settings ▸ About ▸ License…")
+        );
+        assert!(clip.contains("nexa-clip --license install"));
+        assert!(
+            !clip.contains("nsql license"),
+            "clip 제품에 nexa-sql CLI를 안내하지 않는다"
+        );
+        assert!(clip.contains("nexa-clip.license") && clip.contains("NCL-2026-000001"));
         let sql = mail_text("ACME", "nexa-sql", "NSL-2026-000001", "", "");
         assert!(sql.contains("nsql license install") && sql.contains("무기한"));
     }
