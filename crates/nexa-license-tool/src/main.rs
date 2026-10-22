@@ -15,6 +15,8 @@
 //!   기본 = 옛 판의 기간·버전 조항 그대로 · `--renew` = 발급 기본값을 오늘 기준으로 다시(3년 · updates_until = expires · max_major 없으면 대장의 요청 앱 Major) · 개별 옵션이 가장 앞선다.
 //! nexa-license-tool verify  <파일> (--pub <a.pub>… | --key <봉투>) [--machine <base32>] [--build-date YYYY-MM-DD] [--product nexa-sql]
 //! nexa-license-tool ledger  list | find <text> [--ledger …]
+//! nexa-license-tool sign-file   <파일>… --key <봉투> [--pass-env NAME|--pass-stdin]   # 자산 서명(nexa-sql T-29): <stem>.sig = `ed25519 <key-id> <hex128>` · <stem>.sha256 = `<hex>  <이름>`
+//! nexa-license-tool verify-file <파일>… --pub <a.pub>…                               # 옆의 .sig/.sha256 검증(파이프라인 자가 점검)
 //! ```
 //! 종료 코드: 0 · 1(실패) · 2(인자) · 3(요청 코드 무효) · 4(키 봉투 실패 = 암호·손상).
 //! 비밀키는 봉투에서 풀어 **메모리에만** · 대장에는 기기 ID **접두 8자**만(docs/25 §12-4).
@@ -35,7 +37,7 @@ use nexa_license::{
     request,
     sign::{self, Keypair},
     types::{Alg, Kind, Product, SeatMode},
-    verify::{verify_license, Verdict},
+    verify::{verify_license, SigVerifier, Verdict},
     FORMAT,
 };
 use rand_core::RngCore;
@@ -137,7 +139,9 @@ fn usage() -> i32 {
                  [--renew] [--expires D|none] [--updates-until D|none] [--max-major N|none] [--max-version X.Y.Z|none] [--no-mail]\n\
                  defaults: keep the previous terms · --renew = issue defaults from today (3 years · max_major from the ledger request)\n\
          verify  <file> (--pub <a.pub>... | --key <envelope>) [--machine <base32>] [--build-date D] [--app-version X.Y.Z] [--product nexa-sql]\n\
-         ledger  list | find <text> [--ledger ...]\n\n\
+         ledger  list | find <text> [--ledger ...]\n\
+         sign-file   <file>... --key <envelope> [--pass-env NAME|--pass-stdin]   writes <stem>.sig (ed25519 <key-id> <hex>) and <stem>.sha256\n\
+         verify-file <file>... --pub <a.pub>...                                  checks the .sig/.sha256 next to each file\n\n\
          exit codes: 0 ok · 1 failed · 2 usage · 3 bad request code · 4 key envelope (password/corrupt)"
     );
     EXIT_ARGS
@@ -161,6 +165,8 @@ fn main() {
         "reissue" => cmd_reissue(&a),
         "verify" => cmd_verify(&a),
         "ledger" => cmd_ledger(&a),
+        "sign-file" => cmd_sign_file(&a),
+        "verify-file" => cmd_verify_file(&a),
         _ => usage(),
     };
     std::process::exit(code);
@@ -401,6 +407,139 @@ fn pub_path_of(envelope: &Path) -> PathBuf {
     let mut p = envelope.as_os_str().to_owned();
     p.push(".pub");
     PathBuf::from(p)
+}
+
+// ─────────────────────────────────────────────────────────────── sign-file · verify-file(배포 자산 · nexa-sql docs/22 §3)
+
+/// 자산 옆 파일 이름: `x.zip` → `x.sig`/`x.sha256`(`.zip`이 아니면 `<이름>.sig`).
+fn sidecar(path: &Path, suffix: &str) -> PathBuf {
+    let s = path.to_string_lossy();
+    let stem = s.strip_suffix(".zip").unwrap_or(&s);
+    PathBuf::from(format!("{stem}.{suffix}"))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn unhex(s: &str) -> Option<Vec<u8>> {
+    let s = s.trim();
+    if s.len() % 2 != 0 {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect()
+}
+
+fn sha256_hex(data: &[u8]) -> String {
+    use sha2::Digest;
+    hex(&sha2::Sha256::digest(data))
+}
+
+/// `sign-file <파일>… --key <봉투>`: 파일 바이트에 Ed25519 서명 → `<stem>.sig`(`ed25519 <key-id> <hex128>`) + `<stem>.sha256`(`<hex>  <이름>`).
+fn cmd_sign_file(a: &Args) -> i32 {
+    if a.positional.is_empty() {
+        eprintln!("sign-file <file>... --key <envelope>");
+        return EXIT_ARGS;
+    }
+    let (kp, id) = match open_key(a) {
+        Ok(k) => k,
+        Err(c) => return c,
+    };
+    for p in &a.positional {
+        let path = Path::new(p);
+        let data = match fs::read(path) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("{p}: {e}");
+                return 1;
+            }
+        };
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let sig = kp.sign(&data);
+        let sig_text = format!("ed25519 {id} {}\n", hex(&sig));
+        let sha_text = format!("{}  {name}\n", sha256_hex(&data));
+        for (out, text) in [
+            (sidecar(path, "sig"), sig_text),
+            (sidecar(path, "sha256"), sha_text),
+        ] {
+            if let Err(e) = fs::write(&out, text) {
+                eprintln!("{}: {e}", out.display());
+                return 1;
+            }
+            println!("wrote {}", out.display());
+        }
+    }
+    0
+}
+
+/// `verify-file <파일>… --pub <a.pub>…`: 옆의 `.sig`(필수)·`.sha256`(있으면)을 검사.
+fn cmd_verify_file(a: &Args) -> i32 {
+    if a.positional.is_empty() {
+        eprintln!("verify-file <file>... --pub <a.pub>...");
+        return EXIT_ARGS;
+    }
+    let mut keys: Vec<(String, [u8; 32])> = Vec::new();
+    for p in a.all("--pub") {
+        let Ok(text) = fs::read_to_string(p) else {
+            eprintln!("cannot read {p}");
+            return 1;
+        };
+        let Some(k) = sign::parse_public_key_file(&text) else {
+            eprintln!("{p}: not a public key file");
+            return 1;
+        };
+        keys.push(k);
+    }
+    if keys.is_empty() {
+        eprintln!("--pub <a.pub> is required");
+        return EXIT_ARGS;
+    }
+    let verifier = nexa_license::ed25519::Ed25519Verifier;
+    let mut bad = 0;
+    for p in &a.positional {
+        let path = Path::new(p);
+        let data = match fs::read(path) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("{p}: {e}");
+                bad += 1;
+                continue;
+            }
+        };
+        let sig_path = sidecar(path, "sig");
+        let sig_text = fs::read_to_string(&sig_path).unwrap_or_default();
+        let toks: Vec<&str> = sig_text.split_whitespace().collect();
+        let ok = match toks.as_slice() {
+            [alg, id, sig] if alg.eq_ignore_ascii_case("ed25519") => unhex(sig).is_some_and(|s| {
+                keys.iter()
+                    .any(|(kid, pk)| kid == id && verifier.verify(Alg::Ed25519, pk, &data, &s))
+            }),
+            _ => false,
+        };
+        let sha_ok = match fs::read_to_string(sidecar(path, "sha256")) {
+            Ok(t) => t.split_whitespace().next() == Some(sha256_hex(&data).as_str()),
+            Err(_) => true,
+        };
+        println!(
+            "{p}: signature {} · sha256 {}",
+            if ok { "OK" } else { "FAILED" },
+            if sha_ok { "OK" } else { "FAILED" }
+        );
+        if !ok || !sha_ok {
+            bad += 1;
+        }
+    }
+    if bad == 0 {
+        0
+    } else {
+        1
+    }
 }
 
 fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
