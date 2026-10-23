@@ -8,11 +8,15 @@ fn tool() -> Command {
     Command::new(env!("CARGO_BIN_EXE_nexa-license-tool"))
 }
 fn tmp() -> PathBuf {
+    // 프로세스 안 일련번호 — macOS `SystemTime`은 µs 해상도라 병렬 시험 둘이 같은 nanos를 받아
+    // 같은 폴더(root.key "File exists")에 부딪히던 간헐 실패(10-23 맥 V3).
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let d = std::env::temp_dir().join(format!("nlt-e2e-{}-{nanos}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("nlt-e2e-{}-{nanos}-{n}", std::process::id()));
     std::fs::create_dir_all(&d).expect("tmp");
     d
 }
